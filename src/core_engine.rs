@@ -22,6 +22,14 @@ pub struct VulkanApp {
     device: ash::Device,
     queue: vk::Queue,
     queue_family_index: u32,
+    viewports: Vec<Viewport>, // New field for managing multiple viewports
+}
+
+pub struct Viewport {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
 }
 
 impl VulkanApp {
@@ -132,12 +140,29 @@ impl VulkanApp {
             device,
             queue,
             queue_family_index,
+            viewports: vec![
+                Viewport { x: 0.0, y: 0.0, width: 0.5, height: 1.0 }, // Left viewport
+                Viewport { x: 0.5, y: 0.0, width: 0.5, height: 1.0 }, // Right viewport
+            ],
         }
     }
 
     pub fn render(&self) {
-        // Placeholder for rendering logic
-        println!("Rendering frame...");
+        for (i, viewport) in self.viewports.iter().enumerate() {
+            println!(
+                "Rendering viewport {} at position ({}, {}) with size ({}, {})",
+                i, viewport.x, viewport.y, viewport.width, viewport.height
+            );
+            // Add Vulkan rendering logic for each viewport here
+        }
+
+        // Render floating tabs
+        self.render_floating_tabs();
+    }
+
+    fn render_floating_tabs(&self) {
+        println!("Rendering floating tabs...");
+        // Add Vulkan rendering logic for floating tabs here
     }
 }
 

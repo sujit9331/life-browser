@@ -8,14 +8,25 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import './index.css';
+import { Swipeable } from 'react-swipeable';
+import { useState } from 'react';
 
 // Main Application Component
 const App: React.FC = () => {
+    const [theme, setTheme] = useState('light');
+
+    const toggleTheme = () => {
+        setTheme((prevTheme) => (prevTheme === 'light' ? 'dark' : 'light'));
+    };
+
     return (
-        <div className="app-container">
+        <div className={`app-container ${theme}`}>
             {/* Navigation Bar */}
             <header className="navbar">
                 <h1>Life Browser</h1>
+                <button className="theme-toggle" onClick={toggleTheme}>
+                    Toggle Theme
+                </button>
                 <nav>
                     <ul>
                         <li><a href="#home">Home</a></li>
@@ -25,15 +36,31 @@ const App: React.FC = () => {
                 </nav>
             </header>
 
+            {/* AI Assistant Sidebar */}
+            <aside className="ai-sidebar">
+                <button className="toggle-sidebar" onClick={() => console.log('Toggle Sidebar')}>
+                    AI Assistant
+                </button>
+                <div className="sidebar-content">
+                    <p>Welcome to your AI assistant!</p>
+                    <p>How can I help you today?</p>
+                </div>
+            </aside>
+
             {/* Main Content Area */}
-            <main className="main-content">
+            <Swipeable
+                onSwipedLeft={() => console.log('Swiped Left')}
+                onSwipedRight={() => console.log('Swiped Right')}
+            >
+                <main className="main-content">
                 <h2>Welcome to Life Browser</h2>
                 <p>Experience a faster, more secure, and modern browsing experience.</p>
-            </main>
+                </main>
+            </Swipeable>
 
             {/* Footer */}
             <footer className="footer">
-                <p>&copy; 2023 Life Browser. All rights reserved.</p>
+                <p>&copy; 2023 Life Browser. All rights reserved. | Theme: {theme}</p>
             </footer>
         </div>
     );

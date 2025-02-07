@@ -17,6 +17,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
+use webtorrent::{Client, Torrent};
 
 /// Initializes a QUIC server with HTTP/3 support.
 pub async fn start_http3_server(bind_addr: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -27,11 +28,20 @@ pub async fn start_http3_server(bind_addr: &str) -> Result<(), Box<dyn std::erro
 
     // Create a QUIC endpoint
     let endpoint = Endpoint::server(server_config, bind_addr.parse()?)?;
-    println!("HTTP/3 server listening on {}", bind_addr);
+    println!("[INFO] HTTP/3 server listening on {}", bind_addr);
+
+    // Use a connection pool to manage active connections
+    let connection_pool = Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
     // Accept incoming connections
     while let Some(conn) = endpoint.accept().await {
-        tokio::spawn(handle_http3_connection(conn));
+        let pool = connection_pool.clone();
+        tokio::spawn(async move {
+            if let Ok(connection) = conn.await {
+                pool.lock().await.push(connection);
+                handle_http3_connection(connection).await;
+            }
+        });
     }
 
     Ok(())
@@ -60,10 +70,11 @@ pub fn start_p2p_network() -> Result<(), Box<dyn std::error::Error>> {
     // Generate a key pair for the local node
     let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
-    println!("Local peer id: {:?}", local_peer_id);
+    println!("[INFO] Local peer id: {:?}", local_peer_id);
 
     // Create a transport
     let transport = TcpConfig::new()
+        .nodelay(true) // Enable TCP_NODELAY for lower latency
         .upgrade(upgrade::Version::V1)
         .authenticate(libp2p::plaintext::PlainText2Config::new(local_key.clone()))
         .multiplex(YamuxConfig::default())
@@ -71,6 +82,7 @@ pub fn start_p2p_network() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create a Swarm to manage peers
     let behaviour = mdns::Mdns::new(mdns::MdnsConfig::default())?;
+    let peer_cache = Arc::new(tokio::sync::Mutex::new(Vec::new())); // Cache for discovered peers
     let mut swarm = SwarmBuilder::new(transport, behaviour, local_peer_id)
         .executor(Box::new(|fut| {
             tokio::spawn(fut);
@@ -86,7 +98,18 @@ pub fn start_p2p_network() -> Result<(), Box<dyn std::error::Error>> {
     rt.block_on(async {
         loop {
             match swarm.next().await {
-                Some(event) => println!("P2P event: {:?}", event),
+                Some(event) => {
+                    println!("P2P event: {:?}", event);
+                    if let libp2p::swarm::SwarmEvent::Behaviour(mdns::MdnsEvent::Discovered(peers)) = event {
+                        let mut cache = peer_cache.lock().await;
+                        for (peer_id, _) in peers {
+                            if !cache.contains(&peer_id) {
+                                cache.push(peer_id);
+                                println!("Discovered new peer: {:?}", peer_id);
+                            }
+                        }
+                    }
+                }
                 None => break,
             }
         }
@@ -103,6 +126,25 @@ fn generate_self_signed_cert() -> Result<(rustls::Certificate, rustls::PrivateKe
     Ok((cert, key))
 }
 
+/// Starts a WebTorrent client for seeding and downloading files.
+pub async fn start_webtorrent_client() -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::new();
+    println!("[INFO] WebTorrent client initialized.");
+
+    // Example: Add a torrent to download
+    let torrent = client.add_torrent("magnet:?xt=urn:btih:examplehash").await?;
+    println!("Downloading torrent: {:?}", torrent.info_hash());
+
+    // Monitor download progress
+    while !torrent.is_done() {
+        println!("Progress: {:.2}%", torrent.progress() * 100.0);
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    }
+
+    println!("Torrent download complete.");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start HTTP/3 server
@@ -113,9 +155,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Start P2P network
-    if let Err(e) = start_p2p_network() {
-        eprintln!("P2P network error: {}", e);
-    }
+    tokio::spawn(async {
+        if let Err(e) = start_p2p_network() {
+            eprintln!("P2P network error: {}", e);
+        }
+    });
+
+    // Start WebTorrent client
+    tokio::spawn(async {
+        if let Err(e) = start_webtorrent_client().await {
+            eprintln!("WebTorrent client error: {}", e);
+        }
+    });
 
     Ok(())
 }
